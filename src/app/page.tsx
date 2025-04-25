@@ -1,10 +1,32 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function Home() {
+function ChatComponent() {
   const [messages, setMessages] = useState<{ role: 'user' | 'assistant', content: string }[]>([]);
   const [input, setInput] = useState('');
+  const [chatId, setChatId] = useState<string | null>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const id = searchParams.get('id');
+    if (id) {
+      setChatId(id);
+      // Load existing chat
+      fetch(`/api/chats?chatId=${id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.messages) {
+            setMessages(data.messages);
+          }
+        })
+        .catch(error => {
+          console.error('Error loading chat:', error);
+        });
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,13 +43,23 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ message: input }),
+        body: JSON.stringify({ 
+          message: input,
+          conversationHistory: messages,
+          chatId
+        }),
       });
 
       if (!response.ok) throw new Error('Failed to get response');
       
       const data = await response.json();
       setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+
+      // If this is a new chat, update the URL with the chat ID
+      if (data.chatId && !chatId) {
+        setChatId(data.chatId);
+        router.push(`/?id=${data.chatId}`);
+      }
     } catch (error) {
       console.error('Error:', error);
       setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, there was an error processing your message.' }]);
@@ -69,5 +101,13 @@ export default function Home() {
         </form>
       </div>
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ChatComponent />
+    </Suspense>
   );
 }
